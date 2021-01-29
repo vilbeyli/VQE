@@ -37,6 +37,8 @@
 
 #include <memory>
 
+struct ImGuiContext;
+
 // Outputs Render/Update thread sync values on each Tick()
 #define DEBUG_LOG_THREAD_SYNC_VERBOSE 0
 
@@ -370,6 +372,7 @@ private:
 	
 	int                             mIndex_SelectedScene;
 	std::unique_ptr<Scene>          mpScene;
+	ImGuiContext*                   mpImGuiContext;
 
 #if 0
 	RenderingResourcesLookup_t      mRenderingResources;
@@ -397,9 +400,11 @@ private:
 	void                            InitializeHDRProfiles();
 	void                            InitializeEnvironmentMaps();
 	void                            InitializeScenes();
-
+	void                            InitializeUI(HWND hwnd);
 	void                            InitializeThreads();
+
 	void                            ExitThreads();
+	void                            ExitUI();
 
 	void                            HandleWindowTransitions(std::unique_ptr<Window>& pWin, const FWindowSettings& settings);
 	void                            SetMouseCaptureForWindow(HWND hwnd, bool bCaptureMouse);

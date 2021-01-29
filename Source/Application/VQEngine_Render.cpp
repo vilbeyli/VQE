@@ -20,6 +20,8 @@
 #include "Geometry.h"
 #include "GPUMarker.h"
 
+#include "Libs/imgui/imgui.h"
+
 #include <d3d12.h>
 #include <dxgi.h>
 
@@ -212,9 +214,12 @@ constexpr uint MSAA_SAMPLE_COUNT = 4;
 // LOAD
 //
 // ------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 void VQEngine::RenderThread_LoadWindowSizeDependentResources(HWND hwnd, int Width, int Height)
 {
 	assert(Width >= 1 && Height >= 1);
+	ImGuiIO& io = ImGui::GetIO();
+	io.DisplaySize = ImVec2(Width, Height);
 
 	if (hwnd == mpWinMain->GetHWND())
 	{
@@ -359,6 +364,8 @@ void VQEngine::RenderThread_LoadWindowSizeDependentResources(HWND hwnd, int Widt
 
 void VQEngine::RenderThread_LoadResources()
 {
+	InitializeUI(mpWinMain->GetHWND());
+
 	FRenderingResources_MainWindow& rsc = mResources_MainWnd;
 
 	// null cubemap SRV
@@ -662,8 +669,8 @@ void VQEngine::RenderThread_RenderDebugWindow()
 
 	pCmd->Close();
 
-	ID3D12CommandList* ppCommandLists[] = { ctx.pCmdList_GFX };
-	ctx.PresentQueue.pQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	ID3D12CommandList* ppCmds[] = { ctx.pCmdList_GFX };
+	ctx.PresentQueue.pQueue->ExecuteCommandLists(_countof(ppCmds), ppCmds);
 
 
 	//
@@ -742,8 +749,8 @@ HRESULT VQEngine::RenderThread_RenderMainWindow_LoadingScreen(FWindowRenderConte
 
 	pCmd->Close();
 
-	ID3D12CommandList* ppCommandLists[] = { ctx.pCmdList_GFX };
-	ctx.PresentQueue.pQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	ID3D12CommandList* ppCmds[] = { ctx.pCmdList_GFX };
+	ctx.PresentQueue.pQueue->ExecuteCommandLists(_countof(ppCmds), ppCmds);
 
 
 	//
@@ -1538,6 +1545,8 @@ void VQEngine::RenderPostProcess(FWindowRenderContext& ctx, const FPostProcessPa
 
 void VQEngine::RenderUI(FWindowRenderContext& ctx, const FPostProcessParameters& PPParams)
 {
+	mpScene->RenderUI(ctx);
+
 	const bool bUseHDRRenderPath = this->ShouldRenderHDR(mpWinMain->GetHWND());
 
 	const float           RenderResolutionX = static_cast<float>(ctx.MainRTResolutionX);
@@ -1549,7 +1558,6 @@ void VQEngine::RenderUI(FWindowRenderContext& ctx, const FPostProcessParameters&
 	ID3D12DescriptorHeap*         ppHeaps[] = { mRenderer.GetDescHeap(EResourceHeapType::CBV_SRV_UAV_HEAP) };
 	D3D12_RECT                 scissorsRect { 0, 0, (LONG)RenderResolutionX, (LONG)RenderResolutionY };
 	ID3D12GraphicsCommandList*&        pCmd = ctx.pCmdList_GFX;
-
 
 	const bool bFFXCASEnabled = PPParams.IsFFXCASEnabled();
 	const SRV& srv_ColorIn = bFFXCASEnabled 
@@ -1563,7 +1571,6 @@ void VQEngine::RenderUI(FWindowRenderContext& ctx, const FPostProcessParameters&
 	ID3D12Resource*          pSwapChainRT = ctx.SwapChain.GetCurrentBackBufferRenderTarget();
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = ctx.SwapChain.GetCurrentBackBufferRTVHandle();
 
-	SCOPED_GPU_MARKER(pCmd, "SwapchainPassthrough");
 	
 	// Transition Input & Output resources
 	// ignore the tonemapper barrier if CAS is enabeld as it'll already be issued.
@@ -1589,24 +1596,133 @@ void VQEngine::RenderUI(FWindowRenderContext& ctx, const FPostProcessParameters&
 		pCmd->ResourceBarrier(_countof(barriers), barriers);
 	}
 	
+	// A passthrough pass fullscreen triangle pso
+	{
+		SCOPED_GPU_MARKER(pCmd, "SwapchainPassthrough");
+		pCmd->SetPipelineState(mRenderer.GetPSO(bUseHDRRenderPath ? EBuiltinPSOs::HDR_FP16_SWAPCHAIN_PSO : EBuiltinPSOs::FULLSCREEN_TRIANGLE_PSO));
+		pCmd->SetGraphicsRootSignature(mRenderer.GetRootSignature(1)); // hardcoded root signature for now until shader reflection and rootsignature management is implemented
 
-	// TODO: UI rendering
-	//       Currently a passthrough pass fullscreen triangle pso
-	pCmd->SetPipelineState(mRenderer.GetPSO(bUseHDRRenderPath ? EBuiltinPSOs::HDR_FP16_SWAPCHAIN_PSO : EBuiltinPSOs::FULLSCREEN_TRIANGLE_PSO));
-	pCmd->SetGraphicsRootSignature(mRenderer.GetRootSignature(1)); // hardcoded root signature for now until shader reflection and rootsignature management is implemented
-	pCmd->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-	pCmd->SetGraphicsRootDescriptorTable(0, srv_ColorIn.GetGPUDescHandle());
+		pCmd->SetGraphicsRootDescriptorTable(0, srv_ColorIn.GetGPUDescHandle());
 
-	pCmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	pCmd->IASetVertexBuffers(0, 1, NULL);
-	pCmd->IASetIndexBuffer(&ib);
+		pCmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		pCmd->IASetVertexBuffers(0, 1, NULL);
+		pCmd->IASetIndexBuffer(&ib);
 
-	pCmd->RSSetViewports(1, &viewport);
-	pCmd->RSSetScissorRects(1, &scissorsRect);
+		pCmd->RSSetViewports(1, &viewport);
+		pCmd->RSSetScissorRects(1, &scissorsRect);
 
+		pCmd->OMSetRenderTargets(1, &rtvHandle, FALSE, NULL);
+
+		pCmd->DrawIndexedInstanced(3, 1, 0, 0, 0);
+	}
+
+
+	SCOPED_GPU_MARKER(pCmd, "UI");
+
+	struct cb
+	{
+		float matTransformation[4][4];
+	};
+
+	ImGuiIO& io = ImGui::GetIO();
+
+	ImGui::Render();
+
+	ImDrawData* draw_data = ImGui::GetDrawData();
+
+	// Create and grow vertex/index buffers if needed
+	char* pVertices = NULL;
+	D3D12_VERTEX_BUFFER_VIEW VerticesView;
+	
+	ctx.mDynamicHeap_ConstantBuffer.AllocVertexBuffer(draw_data->TotalVtxCount, sizeof(ImDrawVert), (void**)&pVertices, &VerticesView);
+
+	char* pIndices = NULL;
+	D3D12_INDEX_BUFFER_VIEW IndicesView;
+	ctx.mDynamicHeap_ConstantBuffer.AllocIndexBuffer(draw_data->TotalIdxCount, sizeof(ImDrawIdx), (void**)&pIndices, &IndicesView);
+
+	ImDrawVert* vtx_dst = (ImDrawVert*)pVertices;
+	ImDrawIdx * idx_dst = (ImDrawIdx*)pIndices;
+	for (int n = 0; n < draw_data->CmdListsCount; n++)
+	{
+		const ImDrawList* cmd_list = draw_data->CmdLists[n];
+		memcpy(vtx_dst, cmd_list->VtxBuffer.Data, cmd_list->VtxBuffer.Size * sizeof(ImDrawVert));
+		memcpy(idx_dst, cmd_list->IdxBuffer.Data, cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx));
+		vtx_dst += cmd_list->VtxBuffer.Size;
+		idx_dst += cmd_list->IdxBuffer.Size;
+	}
+
+	// Setup orthographic projection matrix into our constant buffer
+	D3D12_GPU_VIRTUAL_ADDRESS cbAddr = {};
+	{
+		cb* constant_buffer;
+		ctx.mDynamicHeap_ConstantBuffer.AllocConstantBuffer(sizeof(cb), (void**)&constant_buffer, &cbAddr);
+
+		float L = 0.0f;
+		float R = io.DisplaySize.x;
+		float B = io.DisplaySize.y;
+		float T = 0.0f;
+		float proj[4][4] =
+		{
+			{ 2.0f / (R - L)   , 0.0f             , 0.0f  ,  0.0f },
+			{ 0.0f             , 2.0f / (T - B)   , 0.0f  ,  0.0f },
+			{ 0.0f             , 0.0f             , 0.5f  ,  0.0f },
+			{ (R + L) / (L - R), (T + B) / (B - T), 0.5f  ,  1.0f },
+		};
+		memcpy(constant_buffer->matTransformation, proj, sizeof(proj));
+	}
+
+	// Setup viewport
+	D3D12_VIEWPORT vp;
+	memset(&vp, 0, sizeof(D3D12_VIEWPORT));
+	vp.Width = io.DisplaySize.x;
+	vp.Height = io.DisplaySize.y;
+	vp.MinDepth = 0.0f;
+	vp.MaxDepth = 1.0f;
+	vp.TopLeftX = vp.TopLeftY = 0.0f;
+	pCmd->RSSetViewports(1, &vp);
+
+	// set pipeline & render state
+	pCmd->SetPipelineState(mRenderer.GetPSO(EBuiltinPSOs::UI_PSO));
+	pCmd->SetGraphicsRootSignature(mRenderer.GetRootSignature(2));
 	pCmd->OMSetRenderTargets(1, &rtvHandle, FALSE, NULL);
 
-	pCmd->DrawIndexedInstanced(3, 1, 0, 0, 0);
+	pCmd->IASetIndexBuffer(&IndicesView);
+	pCmd->IASetVertexBuffers(0, 1, &VerticesView);
+	pCmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	pCmd->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+	pCmd->SetGraphicsRootConstantBufferView(1, cbAddr);
+
+	// Render command lists
+	int vtx_offset = 0;
+	int idx_offset = 0;
+	for (int n = 0; n < draw_data->CmdListsCount; n++)
+	{
+		const ImDrawList* drawList = draw_data->CmdLists[n];
+		for (int cmd_i = 0; cmd_i < drawList->CmdBuffer.Size; cmd_i++)
+		{
+			const ImDrawCmd* pcmd = &drawList->CmdBuffer[cmd_i];
+			if (pcmd->UserCallback)
+			{
+				pcmd->UserCallback(drawList, pcmd);
+			}
+			else
+			{
+				const D3D12_RECT r = 
+				{
+					(LONG)pcmd->ClipRect.x, 
+					(LONG)pcmd->ClipRect.y, 
+					(LONG)pcmd->ClipRect.z, 
+					(LONG)pcmd->ClipRect.w 
+				};
+				pCmd->RSSetScissorRects(1, &r);
+				pCmd->SetGraphicsRootDescriptorTable(0, ((CBV_SRV_UAV*)(pcmd->TextureId))->GetGPUDescHandle());
+
+				pCmd->DrawIndexedInstanced(pcmd->ElemCount, 1, idx_offset, vtx_offset, 0);
+			}
+			idx_offset += pcmd->ElemCount;
+		}
+		vtx_offset += drawList->VtxBuffer.Size;
+	}
 }
 
 HRESULT VQEngine::PresentFrame(FWindowRenderContext& ctx)
@@ -1626,8 +1742,8 @@ HRESULT VQEngine::PresentFrame(FWindowRenderContext& ctx)
 	}
 	pCmd->Close();
 
-	ID3D12CommandList* ppCommandLists[] = { pCmd };
-	ctx.PresentQueue.pQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	ID3D12CommandList* ppCmds[] = { pCmd };
+	ctx.PresentQueue.pQueue->ExecuteCommandLists(_countof(ppCmds), ppCmds);
 	hr = ctx.SwapChain.Present();
 	ctx.SwapChain.MoveToNextFrame();
 	return hr;

@@ -21,6 +21,7 @@
 #include "Scene.h"
 #include "Window.h"
 #include "VQEngine.h"
+#include "imgui.h"
 
 #include "Libs/VQUtils/Source/utils.h"
 
@@ -518,10 +519,67 @@ void Scene::PostUpdate(int FRAME_DATA_INDEX, int FRAME_DATA_NEXT_INDEX)
 	SceneViewNext.sceneParameters = SceneView.sceneParameters;
 }
 
-
-void Scene::RenderUI()
+// To use the 'disabled UI state' functionality (ImGuiItemFlags_Disabled), include internal header
+// https://github.com/ocornut/imgui/issues/211#issuecomment-339241929
+#include "imgui_internal.h"
+void Scene::RenderUI(FWindowRenderContext& ctx)
 {
-	// TODO
+	auto fnDisableUIStateBegin = [](const bool& bEnable)
+	{
+		if (!bEnable)
+		{
+			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+		}
+	};
+	auto fnDisableUIStateEnd = [](const bool& bEnable)
+	{
+		if (!bEnable)
+		{
+			ImGui::PopItemFlag();
+			ImGui::PopStyleVar();
+		}
+	};
+
+	ImGui::NewFrame();
+	ImGuiIO& io = ImGui::GetIO();
+	ImGuiStyle& style = ImGui::GetStyle();
+	style.FrameBorderSize = 1.0f;
+
+	
+	const uint32_t W = ctx.MainRTResolutionX;
+	const uint32_t H = ctx.MainRTResolutionY;
+
+	const uint32_t PROFILER_WINDOW_PADDIG_X = 10;
+	const uint32_t PROFILER_WINDOW_PADDIG_Y = 10;
+	const uint32_t PROFILER_WINDOW_SIZE_X = 330;
+	const uint32_t PROFILER_WINDOW_SIZE_Y = 400;
+	const uint32_t PROFILER_WINDOW_POS_X = W - PROFILER_WINDOW_PADDIG_X - PROFILER_WINDOW_SIZE_X;
+	const uint32_t PROFILER_WINDOW_POS_Y = PROFILER_WINDOW_PADDIG_Y;
+
+	const uint32_t CONTROLS_WINDOW_POS_X = 10;
+	const uint32_t CONTROLS_WINDOW_POS_Y = 10;
+	const uint32_t CONTROLW_WINDOW_SIZE_X = 350;
+	const uint32_t CONTROLW_WINDOW_SIZE_Y = 650;
+
+	ImGui::SetNextWindowPos(ImVec2((float)PROFILER_WINDOW_POS_X, (float)PROFILER_WINDOW_POS_Y), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(ImVec2(PROFILER_WINDOW_SIZE_X, PROFILER_WINDOW_SIZE_Y), ImGuiCond_FirstUseEver);
+
+	static bool bShowProfilerWindow = true;
+	ImGui::Begin("PROFILER (F2)", &bShowProfilerWindow);
+
+	ImGui::Text("Resolution : %ix%i", W, H);
+	ImGui::Text("API        : %s", "DirectX 12");
+	//ImGui::Text("GPU        : %s", );
+	//ImGui::Text("CPU        : %s", m_systemInfo.mCPUName.c_str());
+	//ImGui::Text("FPS        : %d (%.2f ms)", fps, frameTime_ms);
+
+
+	this->RenderSceneUI();
+
+
+
+	ImGui::End();
 }
 
 static std::string DumpCameraInfo(int index, const Camera& cam)

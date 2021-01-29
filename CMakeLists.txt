@@ -71,6 +71,7 @@ set (HeaderVQE
     "Source/Application/Types.h"
     "Source/Application/Math.h"
     "Source/Application/VQEngine.h"
+    "Source/Application/VQUI.h"
     "Source/Application/Events.h"
     "Source/Application/Mesh.h"
     "Source/Application/Material.h"
@@ -99,6 +100,7 @@ set (SourceVQE
     "Source/Application/VQEngine_WindowEvents.cpp"
     "Source/Application/VQEngine_EventHandlers.cpp"
     "Source/Application/EnvironmentMap.cpp"
+    "Source/Application/VQUI.cpp"
     "Source/Application/FileParser.cpp"
     "Source/Application/Events.cpp"
     "Source/Application/Mesh.cpp"
@@ -149,6 +151,7 @@ add_subdirectory(Source/Renderer)
 #    -DASSIMP_INSTALL=OFF
 #)
 add_subdirectory(Libs/assimp)
+add_subdirectory(Libs/imgui)
 
 source_group("Config"   FILES ${Config})
 source_group("Resource" FILES ${Resource})
@@ -170,7 +173,7 @@ link_directories(${CMAKE_CURRENT_SOURCE_DIR}/Libs/VQUtils/Bin/)
 link_directories(${CMAKE_CURRENT_SOURCE_DIR}/Libs/WinPixEventRuntime/bin/x64)
 
 # Create a library with the project name that is build with the Headers and Source files
-add_executable( ${PROJECT_NAME} ${HeaderVQE} ${SourceVQE} ${Config} ${Scenes} ${Resource} ${Shaders} ${Materials} ${FidelityFX})
+add_executable( ${PROJECT_NAME} ${HeaderVQE} ${SourceVQE} ${Config} ${Scenes} ${Resource} ${Shaders} ${Materials} ${FidelityFX} )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY} )
 
@@ -198,12 +201,13 @@ set_target_properties(zlibstatic PROPERTIES FOLDER Libs/assimp)
 #set_target_properties(VQRenderer PROPERTIES FOLDER Libs)
 #set_target_properties(VQUtils PROPERTIES FOLDER Libs)
 set_target_properties(D3D12MA PROPERTIES FOLDER Libs)
+set_target_properties(ImGUI PROPERTIES FOLDER Libs)
 
 # Make sure the compiler can find include files for the libraries
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${Includes})
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${PIXIncl})
 
-target_link_libraries(${PROJECT_NAME} PRIVATE VQUtils VQRenderer assimp WinPixEventRuntime)
+target_link_libraries(${PROJECT_NAME} PRIVATE VQUtils VQRenderer assimp WinPixEventRuntime ImGUI)
 
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
