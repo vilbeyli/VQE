@@ -62,6 +62,7 @@ set (Shaders
     "Shaders/CubemapConvolution.hlsl"
     "Shaders/GaussianBlur.hlsl"
     "Shaders/AMDFidelityFX.hlsl"
+    "Shaders/UI.hlsl"
 )
 
 set (HeaderVQE 
@@ -71,7 +72,6 @@ set (HeaderVQE
     "Source/Application/Types.h"
     "Source/Application/Math.h"
     "Source/Application/VQEngine.h"
-    "Source/Application/VQUI.h"
     "Source/Application/Events.h"
     "Source/Application/Mesh.h"
     "Source/Application/Material.h"
